@@ -22,7 +22,7 @@ class VinstShareActivity : AppCompatActivity() {
         }
 
         val pm = packageManager
-        val targetPackage = resolveInstalledVinstPackage(pm, sharedUrl)
+
 
         if (targetPackage == null) {
             copyToClipboard(sharedUrl)
@@ -57,32 +57,6 @@ class VinstShareActivity : AppCompatActivity() {
         return clipText?.trim()?.takeIf { it.isNotEmpty() }
     }
 
-    private fun resolveInstalledVinstPackage(pm: PackageManager, url: String): String? {
-        VINST_PACKAGE_CANDIDATES.firstOrNull { packageName ->
-            pm.getLaunchIntentForPackage(packageName) != null
-        }?.let { return it }
-
-        val sendProbe = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, url)
-        }
-
-        pm.queryIntentActivities(sendProbe, PackageManager.MATCH_DEFAULT_ONLY)
-            .mapNotNull { it.activityInfo?.packageName }
-            .distinct()
-            .firstOrNull { pkg ->
-                val lower = pkg.lowercase()
-                lower.contains("vinst") || lower.contains("tovinst")
-            }
-            ?.let { return it }
-
-        return pm.getInstalledApplications(0)
-            .firstOrNull { appInfo ->
-                val pkg = appInfo.packageName.lowercase()
-                pkg.contains("vinst") || pkg.contains("tovinst")
-            }
-            ?.packageName
-    }
 
     private fun forwardToVinst(url: String, targetPackage: String, pm: PackageManager): Boolean {
         buildExplicitSendIntent(url, targetPackage, pm)?.let {
@@ -186,4 +160,4 @@ class VinstShareActivity : AppCompatActivity() {
         private const val MSG_COPIED_FALLBACK = "הקישור הועתק, הדבק בתוך וינסט"
         private const val MSG_VINST_NOT_INSTALLED = "וינסט לא מותקן"
     }
-}
+
