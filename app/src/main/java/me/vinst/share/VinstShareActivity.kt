@@ -17,16 +17,26 @@ class VinstShareActivity : AppCompatActivity() {
 
         val sharedUrl = extractSharedUrl(intent)
         if (sharedUrl.isNullOrBlank()) {
-            toastAndFinish("לא נמצא חיבור לוינסט")
+            toastAndFinish(MSG_NO_CONNECTION)
             return
         }
 
-        val sent = forwardToVinst(sharedUrl)
+        val pm = packageManager
+        val targetPackage = resolveInstalledVinstPackage(pm)
+
+        if (targetPackage == null) {
+            copyToClipboard(sharedUrl)
+            Toast.makeText(this, MSG_VINST_NOT_INSTALLED, Toast.LENGTH_SHORT).show()
+            finishAndReturnToSource()
+            return
+        }
+
+        val sent = forwardToVinst(sharedUrl, targetPackage, pm)
         if (sent) {
-            Toast.makeText(this, "נשלח לוינסט", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, MSG_SENT, Toast.LENGTH_SHORT).show()
         } else {
-            fallbackCopyAndOpenVinst(sharedUrl)
-            Toast.makeText(this, "לא נמצא חיבור לוינסט", Toast.LENGTH_SHORT).show()
+            fallbackCopyAndOpenVinst(sharedUrl, targetPackage)
+            Toast.makeText(this, MSG_COPIED_FALLBACK, Toast.LENGTH_SHORT).show()
         }
 
         finishAndReturnToSource()
@@ -40,26 +50,30 @@ class VinstShareActivity : AppCompatActivity() {
         val clipText = incoming.clipData?.let { clipData ->
             (0 until clipData.itemCount)
                 .asSequence()
-                .mapNotNull { index -> clipData.getItemAt(index).coerceToText(this)?.toString() }
+                .mapNotNull { idx -> clipData.getItemAt(idx).coerceToText(this)?.toString() }
                 .firstOrNull { it.isNotBlank() }
         }
+
         return clipText?.trim()?.takeIf { it.isNotEmpty() }
     }
 
-    private fun forwardToVinst(url: String): Boolean {
-        val pm = packageManager
+    private fun resolveInstalledVinstPackage(pm: PackageManager): String? =
+        VINST_PACKAGE_CANDIDATES.firstOrNull { packageName ->
+            pm.getLaunchIntentForPackage(packageName) != null
+        }
 
-        buildExplicitSendIntent(url, pm)?.let {
+    private fun forwardToVinst(url: String, targetPackage: String, pm: PackageManager): Boolean {
+        buildExplicitSendIntent(url, targetPackage, pm)?.let {
             startActivity(it)
             return true
         }
 
-        buildPackageSendIntent(url, pm)?.let {
+        buildPackageSendIntent(url, targetPackage, pm)?.let {
             startActivity(it)
             return true
         }
 
-        buildDeepLinkIntent(url, pm)?.let {
+        buildDeepLinkIntent(url, targetPackage, pm)?.let {
             startActivity(it)
             return true
         }
@@ -67,16 +81,16 @@ class VinstShareActivity : AppCompatActivity() {
         return false
     }
 
-    private fun buildExplicitSendIntent(url: String, pm: PackageManager): Intent? {
+    private fun buildExplicitSendIntent(url: String, targetPackage: String, pm: PackageManager): Intent? {
         val probe = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            `package` = VINST_PACKAGE
+            `package` = targetPackage
         }
 
-        val matches = pm.queryIntentActivities(probe, PackageManager.MATCH_DEFAULT_ONLY)
-            .filter { it.activityInfo?.exported == true }
-
-        val targetActivity = matches.firstOrNull()?.activityInfo ?: return null
+        val targetActivity = pm.queryIntentActivities(probe, PackageManager.MATCH_DEFAULT_ONLY)
+            .firstOrNull { it.activityInfo?.exported == true }
+            ?.activityInfo
+            ?: return null
 
         return Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
@@ -86,50 +100,46 @@ class VinstShareActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildPackageSendIntent(url: String, pm: PackageManager): Intent? {
-        val intent = Intent(Intent.ACTION_SEND).apply {
+    private fun buildPackageSendIntent(url: String, targetPackage: String, pm: PackageManager): Intent? {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, url)
-            `package` = VINST_PACKAGE
+            `package` = targetPackage
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
-        return intent.takeIf { it.resolveActivity(pm) != null }
+
+        return sendIntent.takeIf { it.resolveActivity(pm) != null }
     }
 
-    private fun buildDeepLinkIntent(url: String, pm: PackageManager): Intent? {
-        val candidates = listOf(
+    private fun buildDeepLinkIntent(url: String, targetPackage: String, pm: PackageManager): Intent? {
+        val deepLinks = listOf(
             "vinst://share?url=${Uri.encode(url)}",
             "vinst://open?url=${Uri.encode(url)}",
             "https://vinst.app/share?url=${Uri.encode(url)}"
         )
 
-        return candidates
-            .asSequence()
-            .map { uri ->
-                Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
-                    `package` = VINST_PACKAGE
+        return deepLinks.asSequence()
+            .map { link ->
+                Intent(Intent.ACTION_VIEW, Uri.parse(link)).apply {
+                    `package` = targetPackage
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
             }
-            .firstOrNull { candidate -> candidate.resolveActivity(pm) != null }
+            .firstOrNull { it.resolveActivity(pm) != null }
     }
 
-    private fun fallbackCopyAndOpenVinst(url: String) {
+    private fun fallbackCopyAndOpenVinst(url: String, targetPackage: String) {
+        copyToClipboard(url)
+
+        packageManager.getLaunchIntentForPackage(targetPackage)?.let {
+            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            startActivity(it)
+        }
+    }
+
+    private fun copyToClipboard(url: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         clipboard?.setPrimaryClip(ClipData.newPlainText("Vinst URL", url))
-
-        val launchIntent = packageManager.getLaunchIntentForPackage(VINST_PACKAGE)?.apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-
-        if (launchIntent != null) {
-            startActivity(launchIntent)
-        }
-    }
-
-    private fun finishAndReturnToSource() {
-        moveTaskToBack(true)
-        finish()
     }
 
     private fun toastAndFinish(message: String) {
@@ -137,7 +147,21 @@ class VinstShareActivity : AppCompatActivity() {
         finishAndReturnToSource()
     }
 
+    private fun finishAndReturnToSource() {
+        moveTaskToBack(true)
+        finish()
+    }
+
     companion object {
-        private const val VINST_PACKAGE = "me.vinst.app"
+        private val VINST_PACKAGE_CANDIDATES = listOf(
+            "me.vinst.app",
+            "app.tovinst",
+            "com.vinst.app"
+        )
+
+        private const val MSG_SENT = "נשלח לוינסט"
+        private const val MSG_NO_CONNECTION = "לא נמצא חיבור לוינסט"
+        private const val MSG_COPIED_FALLBACK = "הקישור הועתק, הדבק בתוך וינסט"
+        private const val MSG_VINST_NOT_INSTALLED = "וינסט לא מותקן"
     }
 }
