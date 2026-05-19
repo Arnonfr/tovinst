@@ -21,16 +21,17 @@ class VinstShareActivity : AppCompatActivity() {
             return
         }
 
-        val packageManager = packageManager
-        val targetPackage = resolveInstalledVinstPackage(packageManager)
+        val pm = packageManager
+        val targetPackage = resolveInstalledVinstPackage(pm)
+
         if (targetPackage == null) {
-            Toast.makeText(this, MSG_VINST_NOT_INSTALLED, Toast.LENGTH_SHORT).show()
             copyToClipboard(sharedUrl)
+            Toast.makeText(this, MSG_VINST_NOT_INSTALLED, Toast.LENGTH_SHORT).show()
             finishAndReturnToSource()
             return
         }
 
-        val sent = forwardToVinst(sharedUrl, targetPackage, packageManager)
+        val sent = forwardToVinst(sharedUrl, targetPackage, pm)
         if (sent) {
             Toast.makeText(this, MSG_SENT, Toast.LENGTH_SHORT).show()
         } else {
@@ -49,17 +50,17 @@ class VinstShareActivity : AppCompatActivity() {
         val clipText = incoming.clipData?.let { clipData ->
             (0 until clipData.itemCount)
                 .asSequence()
-                .mapNotNull { index -> clipData.getItemAt(index).coerceToText(this)?.toString() }
+                .mapNotNull { idx -> clipData.getItemAt(idx).coerceToText(this)?.toString() }
                 .firstOrNull { it.isNotBlank() }
         }
+
         return clipText?.trim()?.takeIf { it.isNotEmpty() }
     }
 
-    private fun resolveInstalledVinstPackage(pm: PackageManager): String? {
-        return VINST_PACKAGE_CANDIDATES.firstOrNull { packageName ->
+    private fun resolveInstalledVinstPackage(pm: PackageManager): String? =
+        VINST_PACKAGE_CANDIDATES.firstOrNull { packageName ->
             pm.getLaunchIntentForPackage(packageName) != null
         }
-    }
 
     private fun forwardToVinst(url: String, targetPackage: String, pm: PackageManager): Boolean {
         buildExplicitSendIntent(url, targetPackage, pm)?.let {
@@ -106,6 +107,7 @@ class VinstShareActivity : AppCompatActivity() {
             `package` = targetPackage
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
+
         return sendIntent.takeIf { it.resolveActivity(pm) != null }
     }
 
@@ -128,6 +130,7 @@ class VinstShareActivity : AppCompatActivity() {
 
     private fun fallbackCopyAndOpenVinst(url: String, targetPackage: String) {
         copyToClipboard(url)
+
         packageManager.getLaunchIntentForPackage(targetPackage)?.let {
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             startActivity(it)
@@ -139,14 +142,14 @@ class VinstShareActivity : AppCompatActivity() {
         clipboard?.setPrimaryClip(ClipData.newPlainText("Vinst URL", url))
     }
 
-    private fun finishAndReturnToSource() {
-        moveTaskToBack(true)
-        finish()
-    }
-
     private fun toastAndFinish(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         finishAndReturnToSource()
+    }
+
+    private fun finishAndReturnToSource() {
+        moveTaskToBack(true)
+        finish()
     }
 
     companion object {
