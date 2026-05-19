@@ -22,7 +22,7 @@ class VinstShareActivity : AppCompatActivity() {
         }
 
         val pm = packageManager
-        val targetPackage = resolveInstalledVinstPackage(pm)
+
 
         if (targetPackage == null) {
             copyToClipboard(sharedUrl)
@@ -57,10 +57,6 @@ class VinstShareActivity : AppCompatActivity() {
         return clipText?.trim()?.takeIf { it.isNotEmpty() }
     }
 
-    private fun resolveInstalledVinstPackage(pm: PackageManager): String? =
-        VINST_PACKAGE_CANDIDATES.firstOrNull { packageName ->
-            pm.getLaunchIntentForPackage(packageName) != null
-        }
 
     private fun forwardToVinst(url: String, targetPackage: String, pm: PackageManager): Boolean {
         buildExplicitSendIntent(url, targetPackage, pm)?.let {
@@ -164,4 +160,4 @@ class VinstShareActivity : AppCompatActivity() {
         private const val MSG_COPIED_FALLBACK = "הקישור הועתק, הדבק בתוך וינסט"
         private const val MSG_VINST_NOT_INSTALLED = "וינסט לא מותקן"
     }
-}
+
